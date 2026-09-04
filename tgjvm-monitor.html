@@ -241,7 +241,7 @@ footer{text-align:center;color:var(--muted);padding:8px 18px 20px;font-size:11px
         <div class="help-item"><h3>Top Live Classes / Objects</h3><p><strong>Meaning:</strong> A point-in-time class histogram showing live instance counts and bytes by class.</p><p><strong>Developer:</strong> Helps identify which object types dominate memory and can focus leak investigations.</p><p><strong>Administrator:</strong> Useful evidence when a JVM is consuming unexpected memory before escalation to deeper profiling.</p></div>
         <div class="help-item"><h3>Memory History Graph</h3><p><strong>Meaning:</strong> A rolling time series of used heap, sampled heap capacity, and Old Gen usage.</p><p><strong>Developer:</strong> The shape is often more useful than a single number: healthy allocation commonly looks saw-toothed, while a rising post-GC baseline deserves attention.</p><p><strong>Administrator:</strong> Makes sustained pressure, abrupt growth, and capacity changes visually obvious.</p></div>
         <div class="help-item"><h3>Leading Edge</h3><p><strong>Meaning:</strong> Controls which side of the graph receives the newest sample.</p><p><strong>Developer:</strong> Choose Right for the conventional time-series view or Left for a scope-style view where new samples enter from the left.</p><p><strong>Administrator:</strong> The y-axis labels follow the selected leading edge so current values remain visually adjacent to the newest data.</p></div>
-        <div class="help-item"><h3>Local JVM Bridge</h3><p><strong>Required companion:</strong> TGJVM Monitor communicates with the local PowerShell bridge script <code>tg-jvm-bridge.ps1</code>, which listens on <code>http://localhost:32032</code> and invokes standard JDK diagnostic tools on behalf of the browser.</p><p><strong>Start it:</strong> From the directory containing the script, run <code>powershell -ExecutionPolicy Bypass -File .\tg-jvm-bridge.ps1</code>, then open TGJVM Monitor and use <strong>Discover JVMs</strong>.</p><p><strong>Why it exists:</strong> A browser cannot directly execute <code>jstat</code> or <code>jcmd</code>. The bridge provides a small, local-only HTTP interface using predefined monitoring commands rather than accepting arbitrary operating-system commands.</p><p><strong>Project documentation:</strong> Use <strong>GitHub / Docs ↗</strong> beneath the TGJVM branding or <strong>GitHub / README ↗</strong> in the footer to open the public repository, README, source, and release resources.</p></div>
+        <div class="help-item"><h3>Local JVM Bridge</h3><p><strong>Required companion:</strong> TGJVM Monitor communicates with the local PowerShell bridge script <code>tg-jvm-bridge.ps1</code>, which listens on <code>http://localhost:32032</code> and invokes standard JDK diagnostic tools on behalf of the browser.</p><p><strong>Start it:</strong> From the directory containing the script, run <code>powershell -ExecutionPolicy Bypass -File .\tg-jvm-bridge.ps1</code>, then open TGJVM Monitor and use <strong>Discover JVMs</strong>.</p><p><strong>Hosted GitHub Pages:</strong> When TGJVM is opened from an HTTPS site, Chromium/Edge may require permission for that public page to access the <code>loopback</code> address space. TGJVM declares the request as a loopback request and will report a clearer message if access is denied. Allow local-machine access for the site and retry. If the browser does not support hosted loopback access, open <code>tgjvm-monitor.html</code> locally instead.</p><p><strong>Why it exists:</strong> A browser cannot directly execute <code>jstat</code> or <code>jcmd</code>. The bridge provides a small, local-only HTTP interface using predefined monitoring commands rather than accepting arbitrary operating-system commands.</p><p><strong>Project documentation:</strong> Use <strong>GitHub / Docs ↗</strong> beneath the TGJVM branding or <strong>GitHub / README ↗</strong> in the footer to open the public repository, README, source, and release resources.</p></div>
         <div class="help-item"><h3>Monitoring Scope</h3><p><strong>Meaning:</strong> TGJVM is a lightweight observation tool, not a replacement for JFR, a full profiler, or production APM.</p><p><strong>Developer:</strong> Use it to get oriented quickly, then move to deeper tooling when the evidence warrants it.</p><p><strong>Administrator:</strong> It is designed to minimize setup and monitoring impact while exposing common JVM health signals.</p></div>
       </div>
     </div>
@@ -250,7 +250,7 @@ footer{text-align:center;color:var(--muted);padding:8px 18px 20px;font-size:11px
 
 <script>
 "use strict";
-const APP_VERSION="v0008";
+const APP_VERSION="v0009";
 const BASE="http://localhost:32032";
 const DEFAULT_POLL_MS=2000;
 const HISTORY_MS=5*60*1000;
@@ -262,11 +262,46 @@ $("footerVersion").textContent=APP_VERSION;
 $("copyrightYear").textContent=String(new Date().getFullYear());
 $("helpVersion").textContent=APP_VERSION;
 
+async function loopbackPermissionState(){
+  if(!navigator.permissions?.query)return "unknown";
+  try{
+    const p=await navigator.permissions.query({name:"loopback-network"});
+    return p?.state||"unknown";
+  }catch(_){
+    return "unknown";
+  }
+}
 async function getText(path){
-  const r=await fetch(BASE+path,{cache:"no-store"});
-  const text=await r.text();
-  if(!r.ok) throw new Error(text||("HTTP "+r.status));
-  return text;
+  const url=BASE+path;
+  try{
+    // Chromium/Edge Local Network Access can require an explicit declaration
+    // when this HTTPS-hosted page talks to the local HTTP bridge.
+    const request=new Request(url,{
+      method:"GET",
+      mode:"cors",
+      cache:"no-store",
+      targetAddressSpace:"loopback"
+    });
+    const r=await fetch(request);
+    const text=await r.text();
+    if(!r.ok) throw new Error(text||("HTTP "+r.status));
+    return text;
+  }catch(e){
+    const hosted=location.protocol==="https:";
+    const permission=await loopbackPermissionState();
+    if(hosted && (permission==="denied" || e instanceof TypeError)){
+      const err=new Error(
+        "Local JVM bridge access was denied or blocked by the browser. " +
+        "Allow this site to access services/devices on your local machine, make sure " +
+        "tg-jvm-bridge.ps1 is running, then try Discover JVMs again. " +
+        "If your browser does not support hosted loopback access, open tgjvm-monitor.html locally."
+      );
+      err.code="LOOPBACK_ACCESS";
+      err.permission=permission;
+      throw err;
+    }
+    throw e;
+  }
 }
 function setBridge(ok,msg){$("bridgeStatus").textContent=msg;$("bridgeStatus").className=ok?"status good":"status bad"}
 function mb(kb){const n=Number(kb);return Number.isFinite(n)?n/1024:NaN}
@@ -315,7 +350,14 @@ async function discover(){
       sel.innerHTML="<option>No JVMs found</option>";sel.disabled=true;$("monitorBtn").disabled=true;
       $("selectedInfo").textContent="Bridge responded, but no JVMs were discovered.";
     }
-  }catch(e){setBridge(false,"Bridge unavailable");$("selectedInfo").textContent=e.message}
+  }catch(e){
+    if(e?.code==="LOOPBACK_ACCESS"){
+      setBridge(false,e.permission==="denied"?"Loopback access denied":"Loopback access blocked");
+    }else{
+      setBridge(false,"Bridge unavailable");
+    }
+    $("selectedInfo").textContent=e.message;
+  }
   finally{$("discoverBtn").disabled=false}
 }
 function schedule(){
