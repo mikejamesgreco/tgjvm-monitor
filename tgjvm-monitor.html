@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TGJVM Monitor — The Greco JVM Monitor</title>
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#061019;--panel:#0d1822;--panel2:#09131c;--line:#263b4b;
+  --text:#dceaf2;--muted:#8399a9;--accent:#53f3a6;--bad:#ff7373;--warn:#ffd166;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:13px/1.45 system-ui,Segoe UI,Arial,sans-serif}
+header{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:13px 18px;border-bottom:1px solid var(--line);background:#08131c;position:sticky;top:0;z-index:4}
+.brand strong{display:block;font-size:18px;letter-spacing:.4px}
+.brand span{display:block;font-size:10px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase}
+@keyframes grecoBrandPulse{
+  0%,100%{opacity:.42}
+  50%{opacity:1}
+}
+.brand > span{
+  animation:grecoBrandPulse 3.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce){
+  .brand > span{animation:none;opacity:.72}
+}
+.brand .tgjvm-project-link{
+  display:block;
+  width:max-content;
+  margin-top:3px;
+  font-size:9px;
+  line-height:1.1;
+  font-weight:700;
+  letter-spacing:0;
+  text-transform:none;
+  color:#7890a2;
+  text-decoration:none;
+  white-space:nowrap;
+}
+.brand .tgjvm-project-link:hover{color:var(--accent);text-decoration:underline}
+.header-actions{display:flex;gap:8px;align-items:center}.status{font-size:12px;color:var(--muted)}
+main{max-width:1180px;margin:0 auto;padding:18px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:14px}
+h2{font-size:14px;margin:0 0 12px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+button,select{background:#122331;color:var(--text);border:1px solid #355064;border-radius:5px;padding:8px 10px;font:inherit}
+button{cursor:pointer}button:hover:not(:disabled){border-color:var(--accent)}button:disabled{opacity:.45;cursor:default}
+select{min-width:180px}.jvm-select{flex:1;min-width:420px}
+.good{color:var(--accent)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.metric{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:12px;min-height:76px}
+.metric b{display:block;font-size:18px;margin-top:4px}.metric span{color:var(--muted);font-size:11px}.metric small{display:block;color:var(--muted);margin-top:3px}
+.chart-wrap{height:300px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px}
+canvas{width:100%;height:100%;display:block}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin:8px 0 0;color:var(--muted);font-size:11px}
+.legend span::before{content:"";display:inline-block;width:14px;height:2px;background:currentColor;vertical-align:middle;margin-right:6px}
+.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:6px}
+table{width:100%;border-collapse:collapse;min-width:640px}th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #1b2b37}
+th{color:#a8bac7;background:#0a151e;position:sticky;top:0}td.num{text-align:right;font-variant-numeric:tabular-nums}
+.gc-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
+.gc-summary .metric{min-height:68px}
+details.raw-details{margin-top:12px}
+details.raw-details summary{cursor:pointer;color:#a8bac7;font-weight:600;user-select:none}
+details.raw-details[open] summary{margin-bottom:8px}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;background:var(--panel2);border:1px solid var(--line);padding:12px;border-radius:6px;color:#bfd2de}
+.small{font-size:11px;color:var(--muted)}.spacer{flex:1}
+footer{text-align:center;color:var(--muted);padding:8px 18px 20px;font-size:11px}
+.footer-brand{font-weight:600;color:#9fb0bc}
+.footer-sep{margin:0 7px;color:#425363}
+.footer-repo{color:#8798a6;font-weight:600;text-decoration:none}
+.footer-repo:hover{color:var(--accent);text-decoration:underline}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:flex-start;justify-content:center;padding:50px 18px;z-index:20;overflow:auto}
+.modal.open{display:flex}.modal-card{width:min(980px,100%);background:#0b1720;border:1px solid var(--line);border-radius:9px;box-shadow:0 16px 60px rgba(0,0,0,.45)}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#0b1720}
+.modal-body{padding:16px}.help-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.help-item{background:#08131c;border:1px solid var(--line);border-radius:6px;padding:12px}.help-item h3{margin:0 0 5px;font-size:13px}.help-item p{margin:4px 0;color:#b6c8d4}.help-item strong{color:#dceaf2}
+@media(max-width:800px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.jvm-select{min-width:100%}.help-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <strong>TGJVM Monitor</strong>
+    <span>The Greco JVM Monitor</span>
+    <a class="tgjvm-project-link"
+       href="https://github.com/mikejamesgreco/tgjvm-monitor#readme"
+       target="_blank"
+       rel="noopener noreferrer"
+       title="Open TGJVM Monitor documentation and source on GitHub">GitHub / Docs ↗</a>
+  </div>
+  <div class="header-actions">
+    <div id="bridgeStatus" class="status">Bridge not checked</div>
+    <button id="helpBtn">Help</button>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Running JVMs</h2>
+    <div class="row">
+      <button id="discoverBtn">Discover JVMs</button>
+      <select id="jvmSelect" class="jvm-select" disabled><option>No JVMs loaded</option></select>
+      <label class="small">Poll
+        <select id="intervalSelect">
+          <option value="1000">1 sec</option>
+          <option value="2000" selected>2 sec</option>
+          <option value="5000">5 sec</option>
+          <option value="10000">10 sec</option>
+          <option value="30000">30 sec</option>
+        </select>
+      </label>
+      <button id="monitorBtn" disabled>Monitor Selected JVM</button>
+      <button id="stopBtn" disabled>Stop Monitoring</button>
+    </div>
+    <div id="selectedInfo" class="small" style="margin-top:10px">Bridge: http://localhost:32032</div>
+  </section>
+
+  <section class="panel">
+    <div class="row">
+      <h2 style="margin:0">Memory History</h2>
+      <div class="spacer"></div>
+      <label class="small">Leading edge
+        <select id="leadingEdgeSelect">
+          <option value="right" selected>Right</option>
+          <option value="left">Left</option>
+        </select>
+      </label>
+      <span class="small">Rolling history: last <span id="historyWindowLabel">5 min</span></span>
+    </div>
+    <div class="chart-wrap"><canvas id="memoryChart"></canvas></div>
+    <div class="legend">
+      <span style="color:#53f3a6">Heap used</span>
+      <span style="color:#58a6ff">Heap capacity</span>
+      <span style="color:#ffd166">Old Gen used</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Live JVM Snapshot</h2>
+    <div class="grid">
+      <div class="metric"><span>PID</span><b id="mPid">—</b></div>
+      <div class="metric"><span>Uptime</span><b id="mUptime">—</b></div>
+      <div class="metric"><span>Heap Used</span><b id="mHeap">—</b><small id="mHeapPct"></small></div>
+      <div class="metric"><span>Heap Capacity</span><b id="mHeapCap">—</b></div>
+      <div class="metric"><span>Eden Used</span><b id="mEden">—</b></div>
+      <div class="metric"><span>Old Gen Used</span><b id="mOld">—</b></div>
+      <div class="metric"><span>Metaspace Used</span><b id="mMeta">—</b></div>
+      <div class="metric"><span>Total GC Time</span><b id="mGcTime">—</b></div>
+      <div class="metric"><span>Young GC</span><b id="mYgc">—</b></div>
+      <div class="metric"><span>Full GC</span><b id="mFgc">—</b></div>
+      <div class="metric"><span>Young GC Time</span><b id="mYgct">—</b></div>
+      <div class="metric"><span>Full GC Time</span><b id="mFgct">—</b></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="row">
+      <h2 style="margin:0">Top Live Classes / Objects</h2>
+      <div class="spacer"></div>
+      <button id="histogramBtn" disabled>Refresh Histogram</button>
+    </div>
+    <p class="small">On-demand only. Class histograms are more intrusive than the regular jstat sampling loop.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Class</th><th class="num">Instances</th><th class="num">Bytes</th><th class="num">Size</th></tr></thead>
+        <tbody id="histogramBody"><tr><td colspan="5">Select a JVM, then refresh the histogram.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>GC Details</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Memory Area</th>
+            <th class="num">Capacity</th>
+            <th class="num">Used</th>
+            <th class="num">Utilization</th>
+          </tr>
+        </thead>
+        <tbody id="gcDetailBody">
+          <tr><td colspan="4">Select a JVM and start monitoring.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="gc-summary">
+      <div class="metric"><span>Young GC</span><b id="gcYoungSummary">—</b><small id="gcYoungTimeSummary"></small></div>
+      <div class="metric"><span>Full GC</span><b id="gcFullSummary">—</b><small id="gcFullTimeSummary"></small></div>
+      <div class="metric"><span>Total GC</span><b id="gcTotalSummary">—</b><small id="gcTotalTimeSummary"></small></div>
+    </div>
+
+    <details class="raw-details">
+      <summary>Show Raw jstat Output</summary>
+      <pre id="rawGc">Select a JVM and start monitoring.</pre>
+    </details>
+  </section>
+
+  <section class="panel">
+    <h2>JVM Version</h2>
+    <pre id="rawVersion">—</pre>
+  </section>
+</main>
+
+<footer title="TGJVM Monitor — The Greco JVM Monitor">
+  <span>© <span id="copyrightYear"></span>
+    <span class="footer-brand">mikejamesgreco.me LLC</span>.
+    All rights reserved.
+    <span id="footerVersion"></span>
+    <span class="footer-sep">|</span>
+    <a class="footer-repo"
+       href="https://github.com/mikejamesgreco/tgjvm-monitor#readme"
+       target="_blank"
+       rel="noopener noreferrer"
+       title="Open the TGJVM Monitor repository and README on GitHub">GitHub / README ↗</a>
+  </span>
+</footer>
+
+<div id="helpModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+  <div class="modal-card">
+    <div class="modal-head">
+      <strong id="helpTitle">TGJVM Monitor Help <span id="helpVersion" class="small"></span></strong>
+      <button id="closeHelpBtn">Close</button>
+    </div>
+    <div class="modal-body">
+      <p>TGJVM Monitor uses the local PowerShell bridge and standard JDK tools to observe a JVM without changing the target application. The normal live loop uses lightweight <b>jstat</b> snapshots. Heavier diagnostics, such as a class histogram, are deliberately manual.</p>
+      <div class="help-grid">
+        <div class="help-item"><h3>Poll Interval</h3><p><strong>Meaning:</strong> How often the browser asks the bridge for a new live snapshot.</p><p><strong>Developer:</strong> Shorter intervals make short GC/memory changes easier to see.</p><p><strong>Administrator:</strong> Longer intervals reduce monitoring overhead. The default 2 seconds is a practical general-purpose rate.</p></div>
+        <div class="help-item"><h3>Heap Used</h3><p><strong>Meaning:</strong> Approximate used Java heap from the currently active survivor spaces, Eden, and Old Gen.</p><p><strong>Developer:</strong> A steadily rising floor after collections can suggest retained objects or a leak.</p><p><strong>Administrator:</strong> Shows memory pressure and how close the JVM is operating to its currently committed heap capacity.</p></div>
+        <div class="help-item"><h3>Heap Capacity</h3><p><strong>Meaning:</strong> Capacity currently represented by the sampled young and old heap regions, not necessarily the JVM's configured maximum heap.</p><p><strong>Developer:</strong> Helps distinguish real object growth from normal JVM heap resizing.</p><p><strong>Administrator:</strong> Useful when comparing working heap size with host memory availability.</p></div>
+        <div class="help-item"><h3>Eden Used</h3><p><strong>Meaning:</strong> Memory occupied in Eden, where most new objects are first allocated.</p><p><strong>Developer:</strong> Rapid growth and reset is normal; very high allocation churn can point to excessive temporary-object creation.</p><p><strong>Administrator:</strong> High churn often corresponds with frequent young collections and additional CPU work.</p></div>
+        <div class="help-item"><h3>Old Gen Used</h3><p><strong>Meaning:</strong> Memory occupied by objects that have survived long enough to be promoted into the old generation.</p><p><strong>Developer:</strong> One of the most useful leak indicators. Watch whether the post-GC baseline keeps increasing.</p><p><strong>Administrator:</strong> Sustained old-generation pressure increases the chance of expensive full collections or memory exhaustion.</p></div>
+        <div class="help-item"><h3>Metaspace Used</h3><p><strong>Meaning:</strong> Native memory used mainly for loaded class metadata.</p><p><strong>Developer:</strong> Unexpected growth can indicate excessive dynamic class generation or class-loader retention.</p><p><strong>Administrator:</strong> Metaspace is outside the normal Java heap and still consumes process/host memory.</p></div>
+        <div class="help-item"><h3>Survivor 0 / Survivor 1</h3><p><strong>Meaning:</strong> The two survivor spaces used by the young generation to hold objects that survive a young collection.</p><p><strong>Developer:</strong> Helps show how many objects survive long enough to move beyond Eden and potentially become promoted to Old Gen.</p><p><strong>Administrator:</strong> Persistent survivor pressure can contribute to promotion pressure and eventually higher Old Gen usage.</p></div>
+        <div class="help-item"><h3>Compressed Class Space</h3><p><strong>Meaning:</strong> Memory used for compressed class pointers and related class metadata when the JVM uses compressed class pointers.</p><p><strong>Developer:</strong> Unexpected growth can accompany heavy class loading or class-loader retention.</p><p><strong>Administrator:</strong> It is native JVM memory outside the ordinary object heap and therefore contributes to process memory consumption.</p></div>
+        <div class="help-item"><h3>Young GC / Young GC Time</h3><p><strong>Meaning:</strong> Count and accumulated elapsed time for young-generation collections.</p><p><strong>Developer:</strong> Shows how often short-lived allocations are being cleaned up and the cumulative cost.</p><p><strong>Administrator:</strong> A rapidly increasing count/time can indicate allocation pressure and CPU overhead.</p></div>
+        <div class="help-item"><h3>Full GC / Full GC Time</h3><p><strong>Meaning:</strong> Count and accumulated elapsed time for full/major collections reported by the JVM.</p><p><strong>Developer:</strong> Frequent full collections deserve investigation, especially alongside rising Old Gen.</p><p><strong>Administrator:</strong> Full collections can create significant pauses and are important for latency and service health.</p></div>
+        <div class="help-item"><h3>Total GC Time</h3><p><strong>Meaning:</strong> Young GC time plus Full GC time from the sampled counters.</p><p><strong>Developer:</strong> A simple indication of how much elapsed JVM lifetime has been spent collecting.</p><p><strong>Administrator:</strong> Useful for spotting increasing GC cost while watching application responsiveness.</p></div>
+        <div class="help-item"><h3>Top Live Classes / Objects</h3><p><strong>Meaning:</strong> A point-in-time class histogram showing live instance counts and bytes by class.</p><p><strong>Developer:</strong> Helps identify which object types dominate memory and can focus leak investigations.</p><p><strong>Administrator:</strong> Useful evidence when a JVM is consuming unexpected memory before escalation to deeper profiling.</p></div>
+        <div class="help-item"><h3>Memory History Graph</h3><p><strong>Meaning:</strong> A rolling time series of used heap, sampled heap capacity, and Old Gen usage.</p><p><strong>Developer:</strong> The shape is often more useful than a single number: healthy allocation commonly looks saw-toothed, while a rising post-GC baseline deserves attention.</p><p><strong>Administrator:</strong> Makes sustained pressure, abrupt growth, and capacity changes visually obvious.</p></div>
+        <div class="help-item"><h3>Leading Edge</h3><p><strong>Meaning:</strong> Controls which side of the graph receives the newest sample.</p><p><strong>Developer:</strong> Choose Right for the conventional time-series view or Left for a scope-style view where new samples enter from the left.</p><p><strong>Administrator:</strong> The y-axis labels follow the selected leading edge so current values remain visually adjacent to the newest data.</p></div>
+        <div class="help-item"><h3>Local JVM Bridge</h3><p><strong>Required companion:</strong> TGJVM Monitor communicates with the local PowerShell bridge script <code>tg-jvm-bridge.ps1</code>, which listens on <code>http://localhost:32032</code> and invokes standard JDK diagnostic tools on behalf of the browser.</p><p><strong>Start it:</strong> From the directory containing the script, run <code>powershell -ExecutionPolicy Bypass -File .\tg-jvm-bridge.ps1</code>, then open TGJVM Monitor and use <strong>Discover JVMs</strong>.</p><p><strong>Why it exists:</strong> A browser cannot directly execute <code>jstat</code> or <code>jcmd</code>. The bridge provides a small, local-only HTTP interface using predefined monitoring commands rather than accepting arbitrary operating-system commands.</p><p><strong>Project documentation:</strong> Use <strong>GitHub / Docs ↗</strong> beneath the TGJVM branding or <strong>GitHub / README ↗</strong> in the footer to open the public repository, README, source, and release resources.</p></div>
+        <div class="help-item"><h3>Monitoring Scope</h3><p><strong>Meaning:</strong> TGJVM is a lightweight observation tool, not a replacement for JFR, a full profiler, or production APM.</p><p><strong>Developer:</strong> Use it to get oriented quickly, then move to deeper tooling when the evidence warrants it.</p><p><strong>Administrator:</strong> It is designed to minimize setup and monitoring impact while exposing common JVM health signals.</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const APP_VERSION="v0008";
+const BASE="http://localhost:32032";
+const DEFAULT_POLL_MS=2000;
+const HISTORY_MS=5*60*1000;
+let selectedPid=null,timer=null,pollBusy=false;
+let history=[];
+
+const $=id=>document.getElementById(id);
+$("footerVersion").textContent=APP_VERSION;
+$("copyrightYear").textContent=String(new Date().getFullYear());
+$("helpVersion").textContent=APP_VERSION;
+
+async function getText(path){
+  const r=await fetch(BASE+path,{cache:"no-store"});
+  const text=await r.text();
+  if(!r.ok) throw new Error(text||("HTTP "+r.status));
+  return text;
+}
+function setBridge(ok,msg){$("bridgeStatus").textContent=msg;$("bridgeStatus").className=ok?"status good":"status bad"}
+function mb(kb){const n=Number(kb);return Number.isFinite(n)?n/1024:NaN}
+function fmtMb(n){return Number.isFinite(n)?n.toFixed(1)+" MB":"—"}
+function fmtSec(n){return Number.isFinite(n)?n.toFixed(3)+" s":"—"}
+function parseJstat(text){
+  const lines=text.trim().split(/\r?\n/).filter(Boolean);
+  if(lines.length<2)return null;
+  const h=lines[0].trim().split(/\s+/),v=lines[1].trim().split(/\s+/),o={};
+  h.forEach((k,i)=>o[k]=v[i]);
+  return o;
+}
+function numeric(o,k){const n=Number(o?.[k]);return Number.isFinite(n)?n:0}
+function derive(g){
+  const s0u=numeric(g,"S0U"),s1u=numeric(g,"S1U"),eu=numeric(g,"EU"),ou=numeric(g,"OU");
+  const s0c=numeric(g,"S0C"),s1c=numeric(g,"S1C"),ec=numeric(g,"EC"),oc=numeric(g,"OC");
+  return {
+    heapUsedMb:mb(s0u+s1u+eu+ou),
+    heapCapMb:mb(s0c+s1c+ec+oc),
+    edenMb:mb(eu),oldMb:mb(ou),metaMb:mb(numeric(g,"MU")),
+    ygc:numeric(g,"YGC"),fgc:numeric(g,"FGC"),
+    ygct:numeric(g,"YGCT"),fgct:numeric(g,"FGCT")
+  };
+}
+function parseUptime(text){
+  const cleaned=text.replace(/^\s*\d+:\s*/,"");
+  const m=cleaned.match(/([\d.]+)\s+s/);
+  return m?Number(m[1]):NaN;
+}
+async function discover(){
+  stopMonitoring();
+  $("discoverBtn").disabled=true;
+  try{
+    const text=await getText("/jvms");setBridge(true,"Bridge connected");
+    const rows=text.trim()==="NO_JVMS"?[]:text.trim().split(/\r?\n/).filter(Boolean);
+    const sel=$("jvmSelect");sel.innerHTML="";
+    rows.forEach(row=>{
+      const parts=row.split("|"),pid=parts.shift()||"",name=parts.shift()||"UNKNOWN",version=parts.join("|")||"";
+      const opt=document.createElement("option");opt.value=pid;opt.textContent=`${pid} — ${name}${version?" — "+version:""}`;
+      opt.dataset.name=name;opt.dataset.version=version;sel.appendChild(opt);
+    });
+    if(rows.length){
+      sel.disabled=false;$("monitorBtn").disabled=false;
+      $("selectedInfo").textContent=`${rows.length} JVM(s) discovered.`;
+    }else{
+      sel.innerHTML="<option>No JVMs found</option>";sel.disabled=true;$("monitorBtn").disabled=true;
+      $("selectedInfo").textContent="Bridge responded, but no JVMs were discovered.";
+    }
+  }catch(e){setBridge(false,"Bridge unavailable");$("selectedInfo").textContent=e.message}
+  finally{$("discoverBtn").disabled=false}
+}
+function schedule(){
+  if(timer)clearInterval(timer);
+  if(!selectedPid)return;
+  const ms=Number($("intervalSelect").value)||DEFAULT_POLL_MS;
+  timer=setInterval(poll,ms);
+}
+function percent(used,cap){
+  const u=Number(used),c=Number(cap);
+  return Number.isFinite(u)&&Number.isFinite(c)&&c>0 ? ((u/c)*100).toFixed(1)+"%" : "—";
+}
+function renderGcDetails(g){
+  if(!g)return;
+
+  const rows=[
+    ["Survivor 0","S0C","S0U"],
+    ["Survivor 1","S1C","S1U"],
+    ["Eden","EC","EU"],
+    ["Old Gen","OC","OU"],
+    ["Metaspace","MC","MU"],
+    ["Compressed Class","CCSC","CCSU"]
+  ];
+
+  const body=$("gcDetailBody");
+  body.innerHTML="";
+
+  for(const [label,capKey,usedKey] of rows){
+    const capKb=Number(g[capKey]);
+    const usedKb=Number(g[usedKey]);
+    const tr=document.createElement("tr");
+
+    const values=[
+      label,
+      fmtMb(mb(capKb)),
+      fmtMb(mb(usedKb)),
+      percent(usedKb,capKb)
+    ];
+
+    values.forEach((value,index)=>{
+      const td=document.createElement("td");
+      td.textContent=value;
+      if(index>0)td.className="num";
+      tr.appendChild(td);
+    });
+
+    body.appendChild(tr);
+  }
+
+  const ygc=numeric(g,"YGC"),fgc=numeric(g,"FGC");
+  const ygct=numeric(g,"YGCT"),fgct=numeric(g,"FGCT");
+
+  $("gcYoungSummary").textContent=ygc.toLocaleString()+" collection"+(ygc===1?"":"s");
+  $("gcYoungTimeSummary").textContent=ygct.toFixed(3)+" sec";
+
+  $("gcFullSummary").textContent=fgc.toLocaleString()+" collection"+(fgc===1?"":"s");
+  $("gcFullTimeSummary").textContent=fgct.toFixed(3)+" sec";
+
+  $("gcTotalSummary").textContent=(ygc+fgc).toLocaleString()+" collection"+((ygc+fgc)===1?"":"s");
+  $("gcTotalTimeSummary").textContent=(ygct+fgct).toFixed(3)+" sec";
+}
+
+async function poll(){
+  if(!selectedPid||pollBusy)return;
+  pollBusy=true;
+  try{
+    const [gc,uptime]=await Promise.all([
+      getText(`/gc?pid=${encodeURIComponent(selectedPid)}`),
+      getText(`/uptime?pid=${encodeURIComponent(selectedPid)}`)
+    ]);
+    const g=parseJstat(gc),d=derive(g),up=parseUptime(uptime);
+    renderGcDetails(g);
+    $("rawGc").textContent=gc;$("mPid").textContent=selectedPid;$("mUptime").textContent=Number.isFinite(up)?up.toFixed(1)+" s":"—";
+    $("mHeap").textContent=fmtMb(d.heapUsedMb);$("mHeapCap").textContent=fmtMb(d.heapCapMb);
+    $("mHeapPct").textContent=d.heapCapMb>0?((d.heapUsedMb/d.heapCapMb)*100).toFixed(1)+"% of sampled capacity":"";
+    $("mEden").textContent=fmtMb(d.edenMb);$("mOld").textContent=fmtMb(d.oldMb);$("mMeta").textContent=fmtMb(d.metaMb);
+    $("mYgc").textContent=String(d.ygc);$("mFgc").textContent=String(d.fgc);
+    $("mYgct").textContent=fmtSec(d.ygct);$("mFgct").textContent=fmtSec(d.fgct);$("mGcTime").textContent=fmtSec(d.ygct+d.fgct);
+    history.push({t:Date.now(),heap:d.heapUsedMb,cap:d.heapCapMb,old:d.oldMb});
+    const cutoff=Date.now()-HISTORY_MS;while(history.length&&history[0].t<cutoff)history.shift();
+    drawChart();
+    setBridge(true,"Monitoring PID "+selectedPid);
+  }catch(e){
+    setBridge(false,"Monitoring error");
+    $("rawGc").textContent="ERROR: "+e.message;
+    $("gcDetailBody").innerHTML='<tr><td colspan="4">ERROR: '+String(e.message).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]))+'</td></tr>';
+  }
+  finally{pollBusy=false}
+}
+async function startMonitoring(){
+  stopMonitoring();
+  const sel=$("jvmSelect");selectedPid=sel.value;if(!selectedPid)return;
+  history=[];$("stopBtn").disabled=false;$("monitorBtn").disabled=true;$("histogramBtn").disabled=false;
+  const opt=sel.options[sel.selectedIndex];$("selectedInfo").textContent=`Monitoring ${selectedPid} — ${opt.dataset.name||""}`;
+  try{$("rawVersion").textContent=await getText(`/version?pid=${encodeURIComponent(selectedPid)}`)}
+  catch(e){$("rawVersion").textContent="ERROR: "+e.message}
+  await poll();schedule();
+}
+function stopMonitoring(){
+  if(timer){clearInterval(timer);timer=null}
+  selectedPid=null;pollBusy=false;$("stopBtn").disabled=true;$("histogramBtn").disabled=true;
+  $("monitorBtn").disabled=$("jvmSelect").disabled;
+}
+function drawChart(){
+  const c=$("memoryChart"),rect=c.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
+  const w=Math.max(300,Math.floor(rect.width*dpr)),h=Math.max(180,Math.floor(rect.height*dpr));
+  if(c.width!==w||c.height!==h){c.width=w;c.height=h}
+  const x=c.getContext("2d");x.clearRect(0,0,w,h);
+
+  const leading=$("leadingEdgeSelect").value||"right";
+  const axisOnRight=leading==="right";
+  const pad={
+    l:(axisOnRight?18:62)*dpr,
+    r:(axisOnRight?62:18)*dpr,
+    t:16*dpr,
+    b:28*dpr
+  };
+  const pw=w-pad.l-pad.r,ph=h-pad.t-pad.b;
+  const max=Math.max(1,...history.flatMap(p=>[p.heap||0,p.cap||0,p.old||0]))*1.08;
+
+  x.strokeStyle="#263b4b";x.fillStyle="#8399a9";x.lineWidth=1*dpr;x.font=`${10*dpr}px Segoe UI`;
+  x.textBaseline="middle";
+
+  for(let i=0;i<=4;i++){
+    const yy=pad.t+ph*i/4,val=max*(1-i/4);
+    x.beginPath();x.moveTo(pad.l,yy);x.lineTo(w-pad.r,yy);x.stroke();
+
+    const label=val.toFixed(val>=100?0:1)+" MB";
+    if(axisOnRight){
+      x.textAlign="left";
+      x.fillText(label,w-pad.r+7*dpr,yy);
+    }else{
+      x.textAlign="right";
+      x.fillText(label,pad.l-7*dpr,yy);
+    }
+  }
+
+  const now=Date.now(),start=now-HISTORY_MS;
+  const px=t=>{
+    const ratio=Math.max(0,Math.min(1,(t-start)/HISTORY_MS));
+    return leading==="right"
+      ? pad.l+ratio*pw
+      : pad.l+(1-ratio)*pw;
+  };
+  const py=v=>pad.t+ph-(Math.max(0,v)/max)*ph;
+
+  const series=[["heap","#53f3a6"],["cap","#58a6ff"],["old","#ffd166"]];
+  for(const [key,color] of series){
+    x.strokeStyle=color;x.lineWidth=2*dpr;x.beginPath();let begun=false;
+    for(const p of history){
+      if(!Number.isFinite(p[key]))continue;
+      const xx=px(p.t),yy=py(p[key]);
+      if(!begun){x.moveTo(xx,yy);begun=true}else x.lineTo(xx,yy);
+    }
+    if(begun)x.stroke();
+  }
+
+  x.fillStyle="#8399a9";x.textBaseline="alphabetic";
+  if(leading==="right"){
+    x.textAlign="left";x.fillText("-5m",pad.l,h-8*dpr);
+    x.textAlign="right";x.fillText("now",w-pad.r,h-8*dpr);
+  }else{
+    x.textAlign="left";x.fillText("now",pad.l,h-8*dpr);
+    x.textAlign="right";x.fillText("-5m",w-pad.r,h-8*dpr);
+  }
+}
+function fmtBytes(n){
+  n=Number(n);if(!Number.isFinite(n))return "—";
+  const u=["B","KB","MB","GB"];let i=0;while(n>=1024&&i<u.length-1){n/=1024;i++}
+  return n.toFixed(i===0?0:1)+" "+u[i];
+}
+function friendlyJvmClassName(name){
+  if(!name)return name;
+
+  // JVM descriptor notation for arrays:
+  // [B -> byte[], [I -> int[], [Ljava.lang.Object; -> java.lang.Object[]
+  let dims=0;
+  while(name[dims]==="[")dims++;
+
+  if(dims===0)return name;
+
+  const baseCode=name.slice(dims);
+  const primitive={
+    B:"byte",
+    C:"char",
+    D:"double",
+    F:"float",
+    I:"int",
+    J:"long",
+    S:"short",
+    Z:"boolean"
+  };
+
+  let base;
+  if(baseCode.startsWith("L") && baseCode.endsWith(";")){
+    base=baseCode.slice(1,-1);
+  }else{
+    base=primitive[baseCode] || baseCode;
+  }
+
+  return base + "[]".repeat(dims);
+}
+
+function parseHistogram(text){
+  const rows=[];
+  for(const line of text.split(/\r?\n/)){
+    const m=line.match(/^\s*(\d+):\s+(\d+)\s+(\d+)\s+(.+?)\s*$/);
+    if(m)rows.push({rank:Number(m[1]),instances:Number(m[2]),bytes:Number(m[3]),clazz:m[4]});
+  }
+  return rows.sort((a,b)=>b.bytes-a.bytes).slice(0,10);
+}
+async function refreshHistogram(){
+  if(!selectedPid)return;
+  const btn=$("histogramBtn");btn.disabled=true;btn.textContent="Reading Histogram...";
+  const body=$("histogramBody");body.innerHTML='<tr><td colspan="5">Reading class histogram...</td></tr>';
+  try{
+    const text=await getText(`/histogram?pid=${encodeURIComponent(selectedPid)}`);
+    const rows=parseHistogram(text);
+    if(!rows.length){body.innerHTML='<tr><td colspan="5">No histogram rows could be parsed.</td></tr>';return}
+    body.innerHTML="";
+    rows.forEach((r,i)=>{
+      const tr=document.createElement("tr");
+      [String(i+1),friendlyJvmClassName(r.clazz),r.instances.toLocaleString(),r.bytes.toLocaleString(),fmtBytes(r.bytes)].forEach((v,idx)=>{
+        const td=document.createElement("td");td.textContent=v;if(idx>=2)td.className="num";tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+  }catch(e){body.innerHTML="";const tr=document.createElement("tr"),td=document.createElement("td");td.colSpan=5;td.textContent="ERROR: "+e.message;tr.appendChild(td);body.appendChild(tr)}
+  finally{btn.disabled=!selectedPid;btn.textContent="Refresh Histogram"}
+}
+$("discoverBtn").addEventListener("click",discover);
+$("monitorBtn").addEventListener("click",startMonitoring);
+$("stopBtn").addEventListener("click",stopMonitoring);
+$("intervalSelect").addEventListener("change",()=>{if(selectedPid)schedule()});
+$("histogramBtn").addEventListener("click",refreshHistogram);
+$("leadingEdgeSelect").addEventListener("change",drawChart);
+$("helpBtn").addEventListener("click",()=>$("helpModal").classList.add("open"));
+$("closeHelpBtn").addEventListener("click",()=>$("helpModal").classList.remove("open"));
+$("helpModal").addEventListener("click",e=>{if(e.target===$("helpModal"))$("helpModal").classList.remove("open")});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")$("helpModal").classList.remove("open")});
+window.addEventListener("resize",drawChart);
+discover();
+</script>
+</body>
+</html>

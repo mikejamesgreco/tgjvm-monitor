@@ -462,6 +462,7 @@ tgjvm-monitor/
 ├── index.html              # GitHub Pages launcher
 ├── tgjvm-monitor.html      # Standalone browser monitor
 ├── tg-jvm-bridge.ps1       # Local PowerShell/JDK bridge
+├── JvmScopeTestJava8.java  # Java 8-compatible test JVM workload
 ├── screenshot.jpeg         # README screenshot
 │
 ├── README.md
@@ -484,6 +485,46 @@ http://localhost:32032
 The bridge sends CORS headers for browser access.
 
 Browser security behavior can vary by browser version and by whether TGJVM is opened as a local file or from an HTTPS-hosted page. The standalone local HTML is the simplest deployment model for the local bridge. If a hosted copy cannot reach the local bridge, open `tgjvm-monitor.html` directly from the local machine.
+
+---
+
+## Included Java 8 Test Workload
+
+The repository also includes:
+
+```text
+JvmScopeTestJava8.java
+```
+
+This is a small Java 8-compatible test workload intended to give TGJVM Monitor a predictable JVM to discover and observe without requiring a separate application.
+
+Compile and run it with:
+
+```bat
+javac JvmScopeTestJava8.java
+java JvmScopeTestJava8
+```
+
+The program periodically allocates and retains `byte[]` data, then releases older allocations as it continues running. This creates visible heap-allocation and garbage-collection activity for exercising the monitor.
+
+A typical workflow is:
+
+```text
+JvmScopeTestJava8
+        │
+        ▼
+   Running test JVM
+        │
+        ▼
+tg-jvm-bridge.ps1
+        │
+        ▼
+  TGJVM Monitor
+```
+
+After starting the test program, use **Discover JVMs** in TGJVM Monitor and select `JvmScopeTestJava8`.
+
+The workload is intended for demonstration and monitor testing only. It is not a benchmark or a JVM performance test.
 
 ---
 
